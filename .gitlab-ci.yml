@@ -1,0 +1,4 @@
+include:
+  - project: 'yusen/review-pilot-ci'
+    ref: main
+    file: '/templates/review-pilot.yml'
