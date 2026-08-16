@@ -1,72 +1,52 @@
-#include <iostream>
-#include <dlfcn.h>
-#include <cstdio>
 #include "plthook.h"
+#include <cstdio>
+#include <cstdarg>
+#include <dlfcn.h>
 
-// 定义printf函数类型
-typedef int (*PrintfFunc)(const char *format, ...);
+// 保存原 printf 函数指针
+typedef int (*printf_t)(const char*, ...);
+printf_t g_original_printf = nullptr;
 
-// 我们的hook函数
-int HookedPrintf(const char *format, ...) {
-    printf("HookedPrintf was called with format: %s\n", format);
-    return 0;
+int hooked_printf(const char* fmt, ...) {
+    // 先打印拦截标记，再调用原函数
+    printf("[HOOK 拦截] 捕获到 printf 调用\n");
+    
+    va_list args;
+    va_start(args, fmt);
+    int ret = vprintf(fmt, args);
+    va_end(args);
+    return ret;
 }
 
-int main()
-{
-    try
-    {
-        // 加载动态库
-        void *lib_handle = dlopen("./libdynamic_example.so", RTLD_LAZY);
-        if (!lib_handle)
-        {
-            std::cerr << "Failed to load library: " << dlerror() << std::endl;
-            return 1;
-        }
-
-        // 获取SimpleAdd函数来测试
-        typedef int (*SimpleAddFunc)(int, int);
-        SimpleAddFunc simple_add = (SimpleAddFunc)dlsym(lib_handle, "SimpleAdd");
-        if (!simple_add)
-        {
-            std::cerr << "Failed to get SimpleAdd: " << dlerror() << std::endl;
-            dlclose(lib_handle);
-            return 1;
-        }
-
-        std::cout << "Before hook, calling SimpleAdd(1, 2):" << std::endl;
-        simple_add(1, 2); // 这会调用原始的printf
-
-        // 创建PLTHook实例
-        auto hook = PLTHook::Create("./libdynamic_example.so");
-
-        // 保存原始printf函数指针
-        void *original_printf = nullptr;
-
-        // 替换printf函数
-        if (hook->ReplaceFunction("printf", (void *)HookedPrintf, &original_printf) != PLTHook::SUCCESS)
-        {
-            std::cerr << "Failed to hook printf: " << PLTHook::GetLastError() << std::endl;
-            dlclose(lib_handle);
-            return 1;
-        }
-
-        std::cout << "\nSuccessfully hooked printf\n"
-                  << std::endl;
-
-        // 测试被hook的函数
-        std::cout << "After hook, calling SimpleAdd(1, 2):" << std::endl;
-        simple_add(1, 2); // 这会调用被hook的printf
-
-        simple_add(1, 2); // 这会调用被hook的printf
-        // 清理
-        dlclose(lib_handle);
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error: " << e.what() << std::endl;
+int main() {
+    // 先加载动态库，确保它在进程中
+    void* lib_handle = dlopen("./libtest.so", RTLD_LAZY);
+    if (!lib_handle) {
+        printf("加载动态库失败: %s\n", dlerror());
         return 1;
     }
 
+    // 创建针对 libtest.so 的 PLT Hook
+    auto hook = PLTHook::Create("libtest.so");
+    if (!hook) {
+        printf("创建 Hook 失败: %s\n", PLTHook::GetLastError().c_str());
+        return 1;
+    }
+
+    // 替换 printf 函数
+    int ret = hook->ReplaceFunction("printf", (void*)hooked_printf, (void**)&g_original_printf);
+    if (ret != PLTHook::SUCCESS) {
+        printf("替换函数失败: %s\n", PLTHook::GetLastError().c_str());
+        return 1;
+    }
+
+    // 获取 SimpleAdd 函数指针并调用
+    typedef int (*add_func)(int, int);
+    add_func SimpleAdd = (add_func)dlsym(lib_handle, "SimpleAdd");
+    printf("=== 调用动态库函数 ===\n");
+    int result = SimpleAdd(3, 5);
+    printf("返回结果: %d\n", result);
+
+    dlclose(lib_handle);
     return 0;
 }

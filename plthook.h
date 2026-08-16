@@ -24,6 +24,7 @@ public:
     */
     static std::unique_ptr<PLTHook> Create(const char *file_name);
 
+
     /*
     替换PLT表中的函数
     const char* func_name 是要替换的函数名
@@ -45,7 +46,7 @@ private:
     std::unique_ptr<Impl> pimpl_;
 
     PLTHook();
-
+    
     PLTHook(const PLTHook &) = delete;
     PLTHook &operator=(const PLTHook &) = delete;
 };
