@@ -7,8 +7,7 @@
 typedef int (*PrintfFunc)(const char *format, ...);
 
 // 我们的hook函数
-int HookedPrintf(const char *format, ...)
-{
+int HookedPrintf(const char *format, ...) {
     printf("HookedPrintf was called with format: %s\n", format);
     return 0;
 }
