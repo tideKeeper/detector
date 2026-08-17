@@ -8,13 +8,17 @@ typedef int (*printf_t)(const char*, ...);
 printf_t g_original_printf = nullptr;
 
 int hooked_printf(const char* fmt, ...) {
-    // 先打印拦截标记，再调用原函数
+    // 第一步：执行自定义拦截逻辑
     printf("[HOOK 拦截] 捕获到 printf 调用\n");
     
+    // 第二步：透传参数，调用原始 printf 实现
     va_list args;
     va_start(args, fmt);
-    int ret = vprintf(fmt, args);
+    // 直接通过原地址调用，绕过 PLT，不会触发递归
+    int ret = g_original_printf(fmt, args);
     va_end(args);
+
+    // 第三步：返回原函数的执行结果
     return ret;
 }
 
