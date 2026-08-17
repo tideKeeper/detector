@@ -15,14 +15,14 @@ namespace tracker {
  * 通过该类可以集中管理所有检测器组件的日志和调试信息，便于问题排查和结果分析。
  */
 class OutputControl {
- public:
+public:
   /**
    * @brief 获取OutputControl单例实例
    * @return OutputControl& 单例实例的引用
    *
    * 使用静态局部变量确保线程安全的单例初始化
    */
-  static OutputControl& Instance() {
+  static OutputControl &Instance() {
     static OutputControl instance;
     return instance;
   }
@@ -34,7 +34,7 @@ class OutputControl {
    *
    * 设置输出的目标位置和文件名。如果已经有打开的文件，会先关闭它。
    */
-  void Configure(OutputOption option, const std::string& filename = "");
+  void Configure(OutputOption option, const std::string &filename = "");
 
   /**
    * @brief 通用输出函数，根据配置输出到控制台、文件或两者
@@ -43,7 +43,7 @@ class OutputControl {
    *
    * 根据当前配置的输出选项，将信息输出到相应的目标位置
    */
-  void Print(const char* format, ...) const;
+  void Print(const char *format, ...) const;
 
   /**
    * @brief 仅输出到文件
@@ -52,7 +52,7 @@ class OutputControl {
    *
    * 无论当前配置如何，都只输出到文件(如果文件已打开)
    */
-  void PrintToFile(const char* format, ...) const;
+  void PrintToFile(const char *format, ...) const;
 
   /**
    * @brief 仅输出到控制台
@@ -61,7 +61,7 @@ class OutputControl {
    *
    * 无论当前配置如何，都只输出到控制台
    */
-  void PrintToConsole(const char* format, ...) const;
+  void PrintToConsole(const char *format, ...) const;
 
   /**
    * @brief 获取当前输出文件指针
@@ -69,9 +69,9 @@ class OutputControl {
    *
    * 用于需要直接访问文件指针的场景
    */
-  FILE* GetOutputFile() const { return output_file_; }
+  FILE *GetOutputFile() const { return output_file_; }
 
- private:
+private:
   /**
    * @brief 默认构造函数
    *
@@ -87,8 +87,8 @@ class OutputControl {
   ~OutputControl();
 
   // 禁用拷贝构造和赋值操作，确保单例性质
-  OutputControl(const OutputControl&) = delete;
-  OutputControl& operator=(const OutputControl&) = delete;
+  OutputControl(const OutputControl &) = delete;
+  OutputControl &operator=(const OutputControl &) = delete;
 
   /**
    * @brief 打开输出文件
@@ -111,10 +111,10 @@ class OutputControl {
   std::string output_file_name_;
 
   // 输出文件指针
-  FILE* output_file_ = nullptr;
+  FILE *output_file_ = nullptr;
 };
 
-}  // namespace tracker
+} // namespace tracker
 
 /**
  * @def TRACKER_PRINT
@@ -132,7 +132,8 @@ class OutputControl {
  *
  * 使用OutputControl单例的PrintToFile方法输出信息
  */
-#define TRACKER_PRINT_FILE(...) tracker::OutputControl::Instance().PrintToFile(__VA_ARGS__)
+#define TRACKER_PRINT_FILE(...)                                                \
+  tracker::OutputControl::Instance().PrintToFile(__VA_ARGS__)
 
 /**
  * @def TRACKER_PRINT_CONSOLE
@@ -141,7 +142,8 @@ class OutputControl {
  *
  * 使用OutputControl单例的PrintToConsole方法输出信息
  */
-#define TRACKER_PRINT_CONSOLE(...) tracker::OutputControl::Instance().PrintToConsole(__VA_ARGS__)
+#define TRACKER_PRINT_CONSOLE(...)                                             \
+  tracker::OutputControl::Instance().PrintToConsole(__VA_ARGS__)
 
 /**
  * @def TRACKER_PRINT_IF
@@ -151,11 +153,11 @@ class OutputControl {
  *
  * 当条件为真时，使用TRACKER_PRINT输出信息
  */
-#define TRACKER_PRINT_IF(condition, ...) \
-  do {                                   \
-    if (condition) {                     \
-      TRACKER_PRINT(__VA_ARGS__);        \
-    }                                    \
+#define TRACKER_PRINT_IF(condition, ...)                                       \
+  do {                                                                         \
+    if (condition) {                                                           \
+      TRACKER_PRINT(__VA_ARGS__);                                              \
+    }                                                                          \
   } while (0)
 
 /**

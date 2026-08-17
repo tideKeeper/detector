@@ -11,7 +11,8 @@ namespace tracker {
  * 该函数设置输出控制器的行为模式和输出文件。
  * 如果已经有打开的文件，会先关闭它，然后根据新的配置决定是否打开新文件。
  */
-void OutputControl::Configure(OutputOption option, const std::string& filename) {
+void OutputControl::Configure(OutputOption option,
+                              const std::string &filename) {
   // 关闭之前可能打开的输出文件
   CloseOutputFile();
 
@@ -33,7 +34,7 @@ void OutputControl::Configure(OutputOption option, const std::string& filename) 
  * 根据当前配置的输出选项，将信息输出到相应的目标位置。
  * 使用va_list处理可变参数，确保参数能正确传递给不同的输出目标。
  */
-void OutputControl::Print(const char* format, ...) const {
+void OutputControl::Print(const char *format, ...) const {
   // 初始化可变参数列表
   va_list args1, args2;
   va_start(args1, format);
@@ -48,7 +49,8 @@ void OutputControl::Print(const char* format, ...) const {
   }
 
   // 如果配置为输出到文件或同时输出到控制台和文件，且文件已打开，则输出到文件
-  if ((output_option_ == OutputOption::OutputOption_ConsoleFile || output_option_ == OutputOption::OutputOption_File) &&
+  if ((output_option_ == OutputOption::OutputOption_ConsoleFile ||
+       output_option_ == OutputOption::OutputOption_File) &&
       output_file_) {
     vfprintf(output_file_, format, args1);
     // 立即刷新文件缓冲区，确保数据写入磁盘
@@ -67,7 +69,7 @@ void OutputControl::Print(const char* format, ...) const {
  * 无论当前配置如何，都只输出到文件(如果文件已打开)。
  * 如果文件未打开或配置为仅控制台输出，则不执行任何操作。
  */
-void OutputControl::PrintToFile(const char* format, ...) const {
+void OutputControl::PrintToFile(const char *format, ...) const {
   // 如果文件未打开或配置为仅控制台输出，则直接返回
   if (!output_file_ || output_option_ == OutputOption::OutputOption_Console) {
     return;
@@ -90,7 +92,7 @@ void OutputControl::PrintToFile(const char* format, ...) const {
  * 无论当前配置如何，都只输出到控制台。
  * 如果配置为仅文件输出，则不执行任何操作。
  */
-void OutputControl::PrintToConsole(const char* format, ...) const {
+void OutputControl::PrintToConsole(const char *format, ...) const {
   // 如果配置为仅文件输出，则直接返回
   if (output_option_ == OutputOption::OutputOption_File) {
     return;
@@ -147,8 +149,6 @@ void OutputControl::CloseOutputFile() {
  * 负责清理资源，关闭打开的文件。
  * 确保在对象销毁时不会泄漏文件句柄。
  */
-OutputControl::~OutputControl() {
-  CloseOutputFile();
-}
+OutputControl::~OutputControl() { CloseOutputFile(); }
 
-}  // namespace tracker
+} // namespace tracker
