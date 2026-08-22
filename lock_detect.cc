@@ -58,7 +58,7 @@ class LockTracker {
     // 记录「线程释放锁」（调用unlock之后执行）
     void RecordUnlock(pthread_mutex_t* mutex);
 
-    void PrintStatus();
+    void PrintStatus() const;
 
    private:
     // 因为记账器是单例, 所以需要互斥锁, 避免并发访问
@@ -82,7 +82,7 @@ class LockTracker {
     void PrintLockDetail(const LockInfo& lock_info) const;
 
     // 打印调用栈
-    void PrintCallstack(const void* callstack[], int callstack_size) const;
+    void PrintCallstack(void* const callstack[], int callstack_size) const;
 
     LockTracker() = default;
     ~LockTracker() = default;
@@ -191,7 +191,7 @@ void LockTracker::CheckDeadlock(pthread_t wait_thread, void* target_lock) {
             pthread_t thread_id = deadlock_chain[i].first;
             void* wait_lock = deadlock_chain[i].second;
 
-            TRACKER_PRINT("[Thread %lu] waiting for lock %p\n", thread_id, wait_lock);    
+            TRACKER_PRINT("[Thread %lu] waiting for lock %p\n", thread_id, wait_lock);
             TRACKER_PRINT("  This lock is held by:\n");
 
             auto lock_it = active_locks_.find(wait_lock);
@@ -205,7 +205,9 @@ void LockTracker::CheckDeadlock(pthread_t wait_thread, void* target_lock) {
 }
 
 // 函数会递归调用
-bool LockTracker::DeadlockDFS(pthread_t current_thread, std::unordered_set<pthread_t>& visited_threads, std::vector<std::pair<pthread_t, void*>>& chain) {
+bool LockTracker::DeadlockDFS(pthread_t current_thread,
+                              std::unordered_set<pthread_t>& visited_threads,
+                              std::vector<std::pair<pthread_t, void*>>& chain) {
     // 如果当前线程已被访问, 则说明存在环路
     if (visited_threads.find(current_thread) != visited_threads.end()) {
         return true;
@@ -214,18 +216,232 @@ bool LockTracker::DeadlockDFS(pthread_t current_thread, std::unordered_set<pthre
     visited_threads.insert(current_thread);
 
     // 获取当前线程等待的锁
-    // 我要的锁你用完没? 你在干嘛? 等待别的锁吗? 没有等啊, 在忙, 那没事了. 不是, 什么? 你在等我在用的锁? 可是我在等你的啊!
+    // 我要的锁你用完没? 你在干嘛? 等待别的锁吗? 没有等啊, 在忙, 那没事了. 不是, 什么? 你在等我在用的锁?
+    // 可是我在等你的啊!
     auto thread_it = thread_LockInfos_.find(current_thread);
     if (thread_it == thread_LockInfos_.end()) {
         return false;
     }
     void* waiting_lock = thread_it->second.waiting_lock;
-    if (!waiting_lock)  {
+    if (!waiting_lock) {
         return false;
     }
 
-    chain.emplace_back(current_thread, 
-    
+    chain.emplace_back(current_thread, waiting_lock);
+
+    // 找到持有这把锁的线程， 继续递归追溯
+    auto lock_it = active_locks_.find(waiting_lock);
+    if (lock_it == active_locks_.end() || !lock_it->second.acquired) {
+        chain.pop_back();
+        visited_threads.erase(current_thread);
+        return false;
+    }
+
+    pthread_t next_thread = lock_it->second.owner_thread;
+    if (DeadlockDFS(next_thread, visited_threads, chain)) {
+        return true;
+    }
+
+    chain.pop_back();
+    visited_threads.erase(current_thread);
+    return false;
+}
+
+void LockTracker::PrintLockDetail(const LockInfo& lock_info) const {
+    TRACKER_PRINT("    Lock address: %p\n", lock_info.lock_addr);
+    TRACKER_PRINT("    Held by thread: %lu\n", lock_info.owner_thread);
+    TRACKER_PRINT("    Acquired at callstack:\n");
+    PrintCallstack(lock_info.callstack, lock_info.callstack_size);
+}
+
+void LockTracker::PrintCallstack(void* const stack[], int size) const {
+    char** symbols = backtrace_symbols(stack, size);
+    if (symbols) {
+        for (int i = 0; i < size; i++) {
+            TRACKER_PRINT("      [%d] %s\n", i, symbols[i]);
+        }
+        free(symbols);
+    }
+}
+
+void LockTracker::PrintStatus() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    TRACKER_PRINT("\n=== Lock Detector Status ===\n");
+    TRACKER_PRINT("Active locks: %zu\n", active_locks_.size());
+    TRACKER_PRINT("Active threads: %zu\n", thread_LockInfos_.size());
+
+    if (!active_locks_.empty()) {
+        TRACKER_PRINT("\nActive locks' details:\n");
+        for (const auto& pair : active_locks_) {
+            PrintLockDetail(pair.second);
+            TRACKER_PRINT("\n");
+        }
+    }
+
+    if (!thread_LockInfos_.empty()) {
+        TRACKER_PRINT("\nThread status:\n");
+        for (const auto& pair : thread_LockInfos_) {
+            pthread_t tid = pair.first;
+            const ThreadLockInfo& lock_info = pair.second;
+            TRACKER_PRINT("\n  Thread %lu:\n", tid);
+            TRACKER_PRINT("    Held locks:");
+            for (void* lock : lock_info.held_locks) {
+                TRACKER_PRINT(" %p", lock);
+            }
+            TRACKER_PRINT("\n");
+            if (lock_info.waiting_lock) {
+                TRACKER_PRINT("    Waiting for lock: %p\n", lock_info.waiting_lock);
+            } else {
+                TRACKER_PRINT("    Not waiting for any lock\n");
+            }
+        }
+    }
+    TRACKER_PRINT("\n===========================\n");
+}
+
+LockTracker& Instance() {
+    return LockTracker::GetInstance();
 }
 
 }  // namespace tracker
+
+// ======== Hook回调函数 + 原函数地址记录
+
+static int (*orig_pthread_mutex_lock)(pthread_mutex_t*) = nullptr;
+static int (*orig_pthread_mutex_unlock)(pthread_mutex_t*) = nullptr;
+static int (*orig_pthread_mutex_trylock)(pthread_mutex_t*) = nullptr;
+
+// Hook版 pthread_mutex_lock
+static int HookedPthreadMutexLock(pthread_mutex_t* mutex) {
+    LOCKER_DEBUG("HookedPthreadMutexLock: %p\n", mutex);
+
+    // 加锁前记录等待关系, 执行死锁预判
+    tracker::Instance().RecordBeforeLock(mutex);
+
+    // 调用原函数
+    int result = orig_pthread_mutex_lock(mutex);
+
+    // 加锁成功后
+    if (result == 0) {
+        tracker::Instance().RecordAfterLock(mutex);
+    }
+
+    return result;
+}
+
+static int HookedPthreadMutexUnlock(pthread_mutex_t* mutex) {
+    LOCKER_DEBUG("HookedPthreadMutexUnlock: %p\n", mutex);
+
+    // 移除持有记录
+    tracker::Instance().RecordUnlock(mutex);
+
+    // 调用原函数
+    return orig_pthread_mutex_unlock(mutex);
+}
+
+// 非阻塞尝试加锁, 成功才记录持有, 失败不记录等待(不会阻塞, 不参与死锁, 所以不需要record before lock)
+static int HookedPthreadMutexTrylock(pthread_mutex_t* mutex) {
+    LOCKER_DEBUG("HookedPthreadMutexTrylock: %p\n", mutex);
+
+    int result = orig_pthread_mutex_trylock(mutex);
+
+    if (result == 0) {
+        tracker::Instance().RecordAfterLock(mutex);
+    }
+
+    return result;
+}
+
+// LockHook, 钩子的执行者
+class LockHook {
+   public:
+    explicit LockHook(std::string lib_path) : lib_path_(std::move(lib_path)) {}
+    ~LockHook() = default;
+
+    void Start();
+
+   private:
+    std::string lib_path_;
+    std::unique_ptr<PLTHook> hook_;
+};
+
+void LockHook::Start() {
+    hook_ = PLTHook::Create(lib_path_.c_str());
+    if (!hook_) {
+        TRACKER_ERROR("Failed to create lock hook for %s: %s", lib_path_.c_str(), PLTHook::GetLastError().c_str());
+        return;
+    }
+
+    // 钩子 pthread_mutex_lock
+    if (hook_->ReplaceFunction("pthread_mutex_lock", (void*)HookedPthreadMutexLock, (void**)&orig_pthread_mutex_lock) !=
+        PLTHook::SUCCESS) {
+        TRACKER_WARNING("pthread_mutex_lock not hooked: %s", PLTHook::GetLastError().c_str());
+    }
+
+    // 钩子 pthread_mutex_unlock
+    if (hook_->ReplaceFunction("pthread_mutex_unlock", (void*)HookedPthreadMutexUnlock,
+                               (void**)&orig_pthread_mutex_unlock) != PLTHook::SUCCESS) {
+        TRACKER_WARNING("pthread_mutex_unlock not hooked: %s", PLTHook::GetLastError().c_str());
+    }
+
+    // 钩子 pthread_mutex_trylock
+    if (hook_->ReplaceFunction("pthread_mutex_trylock", (void*)HookedPthreadMutexTrylock,
+                               (void**)&orig_pthread_mutex_trylock) != PLTHook::SUCCESS) {
+        TRACKER_WARNING("pthread_mutex_trylock not found in PLT, skipping");
+    }
+}
+
+// ======== Pimpl实现层
+class LockDetectImpl {
+   public:
+    LockDetectImpl() = default;
+    ~LockDetectImpl() = default;
+
+    void Register(const std::string& lib_path);
+    void RegisterMain();
+    void Start();
+    void Detect();
+
+   private:
+    std::vector<std::unique_ptr<LockHook>> hooks_;
+};
+
+void LockDetectImpl::Register(const std::string& lib_path) {
+    hooks_.emplace_back(std::make_unique<LockHook>(lib_path));
+}
+
+void LockDetectImpl::RegisterMain() {
+    hooks_.emplace_back(std::make_unique<LockHook>(std::string()));
+}
+
+void LockDetectImpl::Start() {
+    for (auto& hook : hooks_) {
+        hook->Start();
+    }
+}
+
+void LockDetectImpl::Detect() {
+    tracker::Instance().PrintStatus();
+}
+
+// ======== LockDetect接口层
+LockDetect::LockDetect() : impl_(std::make_unique<LockDetectImpl>()) {}
+
+LockDetect::~LockDetect() = default;
+
+void LockDetect::Register(const std::string& lib_path) {
+    impl_->Register(lib_path);
+}
+
+void LockDetect::RegisterMain() {
+    impl_->RegisterMain();
+}
+
+void LockDetect::Start() {
+    impl_->Start();
+}
+
+void LockDetect::Detect() {
+    impl_->Detect();
+}
