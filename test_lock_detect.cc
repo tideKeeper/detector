@@ -23,19 +23,19 @@ int main() {
     LockDetect::GetInstance().Start();
 
     // ---------- 测试1：正常加解锁 ----------
-    TRACKER_PRINT("\n----- 测试1：正常加锁解锁 -----\n");
+    TRACKER_PRINT("\n----- 测试1:正常加锁解锁 -----\n");
     StartNormalTest();
     LockDetect::GetInstance().Detect();
     TRACKER_PRINT("测试1 完成：正常场景无残留锁、无死锁\n\n");
 
     // ---------- 测试3：trylock 非阻塞 ----------
-    TRACKER_PRINT("\n----- 测试3：trylock 非阻塞加锁 -----\n");
+    TRACKER_PRINT("\n----- 测试3:trylock 非阻塞加锁 -----\n");
     StartTrylockTest();
     LockDetect::GetInstance().Detect();
-    TRACKER_PRINT("测试3 完成：trylock 无残留锁、无误报\n\n");
+    TRACKER_PRINT("测试3 完成:trylock 无残留锁、无误报\n\n");
 
     // ---------- 测试2：经典死锁场景（放最后） ----------
-    TRACKER_PRINT("\n----- 测试2：双线程反向加锁死锁 -----\n");
+    TRACKER_PRINT("\n----- 测试2:双线程反向加锁死锁 -----\n");
     TRACKER_PRINT("即将触发死锁场景，检测模块会实时输出死锁报告\n");
     TRACKER_PRINT("触发后程序会因真实死锁阻塞，可手动 Ctrl+C 终止\n\n");
     StartDeadlockTest();
