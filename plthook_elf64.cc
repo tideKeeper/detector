@@ -189,8 +189,8 @@ std::unique_ptr<PLTHook> PLTHook::Create(const char* file_name) {
 }
 
 std::unique_ptr<PLTHook> PLTHook::Impl::Create(const char* file_name) {
-    // filename为空
-    if (!file_name) {
+    // nullptr 或空字符串均表示主程序
+    if (!file_name || file_name[0] == '\0') {
         printf("Creating PLTHook for main program\n");
 
         // 获取主程序的link_map

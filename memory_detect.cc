@@ -302,7 +302,7 @@ static void HookedOperatorDeleteArray(void* ptr) noexcept {
 
 class MemoryHook {
    public:
-    explicit MemoryHook(std::string lib_path) : lib_path_(std::move(lib_path)) {}
+    explicit MemoryHook(std::string lib_name) : lib_name_(std::move(lib_name)) {}
 
     ~MemoryHook() = default;
 
@@ -310,15 +310,15 @@ class MemoryHook {
     void Start();
 
    private:
-    std::string lib_path_;
+    std::string lib_name_;
     std::unique_ptr<PLTHook> hook_;
 };
 
 void MemoryHook::Start() {
     // 创建PLTHook实例, 针对特定的模块, 替换所有内存分配释放函数
-    hook_ = PLTHook::Create(lib_path_.c_str());
+    hook_ = PLTHook::Create(lib_name_.c_str());
     if (!hook_) {
-        TRACKER_ERROR("failed to create PLTHook instance for lib_path: %s", lib_path_.c_str());
+        TRACKER_ERROR("failed to create PLTHook instance for lib_name: %s", lib_name_.c_str());
         return;
     }
 
@@ -369,7 +369,7 @@ class MemoryDetectImpl {
     MemoryDetectImpl() = default;
     ~MemoryDetectImpl() = default;
 
-    void Register(const std::string& lib_path);
+    void Register(const std::string& lib_name);
     void RegisterMain();
     void Start();
     void Detect();
@@ -378,8 +378,8 @@ class MemoryDetectImpl {
     std::vector<std::unique_ptr<MemoryHook>> hooks_;
 };
 
-void MemoryDetectImpl::Register(const std::string& lib_path) {
-    hooks_.emplace_back(std::make_unique<MemoryHook>(lib_path));
+void MemoryDetectImpl::Register(const std::string& lib_name) {
+    hooks_.emplace_back(std::make_unique<MemoryHook>(lib_name));
 }
 
 void MemoryDetectImpl::RegisterMain() {
@@ -401,8 +401,8 @@ MemoryDetect::MemoryDetect() : impl_(std::make_unique<MemoryDetectImpl>()) {}
 
 MemoryDetect::~MemoryDetect() = default;
 
-void MemoryDetect::Register(const std::string& lib_path) {
-    impl_->Register(lib_path);
+void MemoryDetect::Register(const std::string& lib_name) {
+    impl_->Register(lib_name);
 }
 
 void MemoryDetect::RegisterMain() {

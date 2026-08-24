@@ -1,7 +1,7 @@
+#include <dlfcn.h>
+#include <cstdio>
 #include "lock_detect.h"
 #include "output_control.h"
-#include <cstdio>
-#include <dlfcn.h>
 
 // 声明动态库导出的测试接口
 extern "C" void StartNormalTest();
@@ -10,10 +10,7 @@ extern "C" void StartDeadlockTest();
 
 int main() {
     // 1. 初始化输出控制
-    tracker::OutputControl::Instance().Configure(
-        OutputOption::OutputOption_ConsoleFile,
-        "lock_detect_test.log"
-    );
+    tracker::OutputControl::Instance().Configure(OutputOption::OutputOption_ConsoleFile, "lock_detect_test.log");
 
     TRACKER_PRINT("===== 死锁检测模块测试（动态库模式）=====\n\n");
 

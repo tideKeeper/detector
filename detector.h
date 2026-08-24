@@ -1,6 +1,18 @@
 #pragma once
 
+#ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(_WIN32) && defined(DETECTOR_BUILD_SHARED)
+#define DETECTOR_API __declspec(dllexport)
+#elif defined(_WIN32) && defined(DETECTOR_USE_SHARED)
+#define DETECTOR_API __declspec(dllimport)
+#elif defined(__GNUC__) && defined(DETECTOR_BUILD_SHARED)
+#define DETECTOR_API __attribute__((visibility("default")))
+#else
+#define DETECTOR_API
+#endif
 
 /**
  * @enum DetectorOption
@@ -35,7 +47,7 @@ enum OutputOption {
  * 该函数必须在使用其他检测器函数之前调用，用于配置检测器的工作模式和输出方式。
  * 工作目录用于存放检测结果文件，如果选择了文件输出方式。
  */
-void Detector_Init(const char* work_dir, DetectorOption detect_option, OutputOption output_option);
+DETECTOR_API void Detector_Init(const char* work_dir, DetectorOption detect_option, OutputOption output_option);
 
 /**
  * @brief 启动检测器
@@ -44,7 +56,7 @@ void Detector_Init(const char* work_dir, DetectorOption detect_option, OutputOpt
  * 必须在注册完所有需要检测的库后调用，且在调用Detector_Detect之前调用。
  * 启动后，检测器会通过hook机制拦截相关函数调用，收集必要的信息。
  */
-void Detector_Start(void);
+DETECTOR_API void Detector_Start(void);
 
 /**
  * @brief 执行检测
@@ -53,7 +65,7 @@ void Detector_Start(void);
  * 可以在程序的关键点调用，检查是否存在内存泄漏或死锁。
  * 检测结果会根据配置的输出选项输出到控制台或文件。
  */
-void Detector_Detect(void);
+DETECTOR_API void Detector_Detect(void);
 
 /**
  * @brief 注册指定库进行检测
@@ -63,7 +75,7 @@ void Detector_Detect(void);
  * 必须在调用Detector_Start之前调用，可以多次调用以注册多个库。
  * 如果lib_name为NULL，函数会直接返回而不执行任何操作。
  */
-void Detector_Register(const char* lib_name);
+DETECTOR_API void Detector_Register(const char* lib_name);
 
 /**
  * @brief 注册主程序进行检测
@@ -72,6 +84,8 @@ void Detector_Register(const char* lib_name);
  * 必须在调用Detector_Start之前调用。
  * 这个函数是Detector_Register的特殊情况，相当于使用空字符串调用Detector_Register。
  */
-void Detector_RegisterMain(void);
+DETECTOR_API void Detector_RegisterMain(void);
 
-}  // extern "C"
+#ifdef __cplusplus
+}
+#endif

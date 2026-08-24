@@ -13,7 +13,7 @@ class LockDetect {
          return instance;
       }
 
-      void Register(const std::string& lib_path);
+      void Register(const std::string& lib_name);
       void RegisterMain();
       void Start();
       void Detect();
