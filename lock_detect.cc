@@ -255,12 +255,38 @@ void LockTracker::PrintLockDetail(const LockInfo& lock_info) const {
 }
 
 void LockTracker::PrintCallstack(void* const stack[], int size) const {
-    char** symbols = backtrace_symbols(stack, size);
-    if (symbols) {
-        for (int i = 0; i < size; i++) {
-            TRACKER_PRINT("      [%d] %s\n", i, symbols[i]);
+    for (int i = 0; i < size; ++i) {
+        void* abs_addr = stack[i];
+        Dl_info dlinfo;
+
+        // 第一步：通过dladdr获取当前地址所属的模块路径和基址
+        if (dladdr(abs_addr, &dlinfo) && dlinfo.dli_fname) {
+            // 计算相对地址 = 绝对地址 - 模块加载基址
+            uintptr_t rel = reinterpret_cast<uintptr_t>(abs_addr) - reinterpret_cast<uintptr_t>(dlinfo.dli_fbase);
+            void* rel_addr = reinterpret_cast<void*>(rel);
+
+            char cmd[256];
+            snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -p %p", dlinfo.dli_fname, rel_addr);
+
+            // 第二步：调用addr2line解析源码行号
+            FILE* pipe = popen(cmd, "r");
+            if (pipe) {
+                char line[256];
+                if (fgets(line, sizeof(line), pipe)) {
+                    // 解析成功，直接输出带行号的结果
+                    TRACKER_PRINT("      [%d] %s", i, line);
+                }
+                pclose(pipe);
+                continue;  // 解析成功，跳过降级逻辑
+            }
         }
-        free(symbols);
+
+        // 第三步：降级兜底：addr2line失败时，用backtrace_symbols输出符号+偏移
+        char** symbols = backtrace_symbols(&stack[i], 1);
+        if (symbols) {
+            TRACKER_PRINT("      [%d] %s\n", i, symbols[0]);
+            free(symbols);
+        }
     }
 }
 
@@ -300,10 +326,6 @@ void LockTracker::PrintStatus() const {
     TRACKER_PRINT("\n===========================\n");
 }
 
-LockTracker& Instance() {
-    return LockTracker::GetInstance();
-}
-
 }  // namespace tracker
 
 // ======== Hook回调函数 + 原函数地址记录
@@ -317,14 +339,14 @@ static int HookedPthreadMutexLock(pthread_mutex_t* mutex) {
     LOCKER_DEBUG("HookedPthreadMutexLock: %p\n", mutex);
 
     // 加锁前记录等待关系, 执行死锁预判
-    tracker::Instance().RecordBeforeLock(mutex);
+    tracker::LockTracker::GetInstance().RecordBeforeLock(mutex);
 
     // 调用原函数
     int result = orig_pthread_mutex_lock(mutex);
 
     // 加锁成功后
     if (result == 0) {
-        tracker::Instance().RecordAfterLock(mutex);
+        tracker::LockTracker::GetInstance().RecordAfterLock(mutex);
     }
 
     return result;
@@ -334,7 +356,7 @@ static int HookedPthreadMutexUnlock(pthread_mutex_t* mutex) {
     LOCKER_DEBUG("HookedPthreadMutexUnlock: %p\n", mutex);
 
     // 移除持有记录
-    tracker::Instance().RecordUnlock(mutex);
+    tracker::LockTracker::GetInstance().RecordUnlock(mutex);
 
     // 调用原函数
     return orig_pthread_mutex_unlock(mutex);
@@ -347,7 +369,7 @@ static int HookedPthreadMutexTrylock(pthread_mutex_t* mutex) {
     int result = orig_pthread_mutex_trylock(mutex);
 
     if (result == 0) {
-        tracker::Instance().RecordAfterLock(mutex);
+        tracker::LockTracker::GetInstance().RecordAfterLock(mutex);
     }
 
     return result;
@@ -356,20 +378,20 @@ static int HookedPthreadMutexTrylock(pthread_mutex_t* mutex) {
 // LockHook, 钩子的执行者
 class LockHook {
    public:
-    explicit LockHook(std::string lib_path) : lib_path_(std::move(lib_path)) {}
+    explicit LockHook(std::string lib_name) : lib_name_(std::move(lib_name)) {}
     ~LockHook() = default;
 
     void Start();
 
    private:
-    std::string lib_path_;
+    std::string lib_name_;
     std::unique_ptr<PLTHook> hook_;
 };
 
 void LockHook::Start() {
-    hook_ = PLTHook::Create(lib_path_.c_str());
+    hook_ = PLTHook::Create(lib_name_.c_str());
     if (!hook_) {
-        TRACKER_ERROR("Failed to create lock hook for %s: %s", lib_path_.c_str(), PLTHook::GetLastError().c_str());
+        TRACKER_ERROR("Failed to create lock hook for %s: %s", lib_name_.c_str(), PLTHook::GetLastError().c_str());
         return;
     }
 
@@ -398,7 +420,7 @@ class LockDetectImpl {
     LockDetectImpl() = default;
     ~LockDetectImpl() = default;
 
-    void Register(const std::string& lib_path);
+    void Register(const std::string& lib_name);
     void RegisterMain();
     void Start();
     void Detect();
@@ -407,8 +429,8 @@ class LockDetectImpl {
     std::vector<std::unique_ptr<LockHook>> hooks_;
 };
 
-void LockDetectImpl::Register(const std::string& lib_path) {
-    hooks_.emplace_back(std::make_unique<LockHook>(lib_path));
+void LockDetectImpl::Register(const std::string& lib_name) {
+    hooks_.emplace_back(std::make_unique<LockHook>(lib_name));
 }
 
 void LockDetectImpl::RegisterMain() {
@@ -422,7 +444,7 @@ void LockDetectImpl::Start() {
 }
 
 void LockDetectImpl::Detect() {
-    tracker::Instance().PrintStatus();
+    tracker::LockTracker::GetInstance().PrintStatus();
 }
 
 // ======== LockDetect接口层
@@ -430,8 +452,8 @@ LockDetect::LockDetect() : impl_(std::make_unique<LockDetectImpl>()) {}
 
 LockDetect::~LockDetect() = default;
 
-void LockDetect::Register(const std::string& lib_path) {
-    impl_->Register(lib_path);
+void LockDetect::Register(const std::string& lib_name) {
+    impl_->Register(lib_name);
 }
 
 void LockDetect::RegisterMain() {

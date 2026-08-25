@@ -15,7 +15,7 @@ class MemoryDetect {
     };
 
     // 将指定的动态库添加到内存检测范围中
-    void Register(const std::string& lib_path);
+    void Register(const std::string& lib_name);
 
     // 将主进程添加到内存检测范围中
     void RegisterMain();

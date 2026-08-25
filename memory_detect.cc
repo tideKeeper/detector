@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>     // 哈希表，用于存储内存分配信息
 #include <vector>            // 动态数组
+
 #include "output_control.h"  // 输出控制模块
 #include "plthook.h"         // PLT钩子模块，用于函数替换
 
@@ -185,10 +186,6 @@ size_t MemoryTracker::GetActiveAllocations() const {
     return active_allocations_cnt_;
 }
 
-MemoryTracker& Instance() {
-    return MemoryTracker::GetInstance();
-}
-
 }  // namespace tracker
 
 //========= hooked函数模块
@@ -208,7 +205,7 @@ static void* HookedMalloc(size_t size) {
 
     void* ptr = orig_malloc(size);
 
-    tracker::Instance().RecordAllocation(ptr, size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, size);
 
     // 返回分配的内存地址, 供使用
     return ptr;
@@ -221,7 +218,7 @@ static void HookedFree(void* ptr) {
     orig_free(ptr);
 
     // 消账
-    tracker::Instance().RecordDeallocation(ptr);
+    tracker::MemoryTracker::GetInstance().RecordDeallocation(ptr);
 }
 
 // calloc = 分配 + 清零，参数是「元素个数 × 每个元素大小
@@ -229,7 +226,7 @@ static void* HookedCalloc(size_t num, size_t size) {
     TRACKER_DEBUG("HookedCalloc: %zu, %zu\n", num, size);
 
     void* ptr = orig_calloc(num, size);
-    tracker::Instance().RecordAllocation(ptr, num * size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, num * size);
 
     return ptr;
 }
@@ -248,9 +245,9 @@ static void* HookedRealloc(void* old_ptr, size_t new_size) {
 
     // 成功, 更新记录
     if (old_ptr) {
-        tracker::Instance().RecordDeallocation(old_ptr);
+        tracker::MemoryTracker::GetInstance().RecordDeallocation(old_ptr);
     }
-    tracker::Instance().RecordAllocation(new_ptr, new_size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(new_ptr, new_size);
 
     return new_ptr;
 }
@@ -260,7 +257,7 @@ static void* HookedOperatorNew(size_t size) {
     TRACKER_DEBUG("HookedOperateNew: %zu\n", size);
 
     void* ptr = orig_new(size);
-    tracker::Instance().RecordAllocation(ptr, size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, size);
 
     return ptr;
 }
@@ -273,7 +270,7 @@ static void HookedOperatorDelete(void* ptr) noexcept {
         return;
     }
 
-    tracker::Instance().RecordDeallocation(ptr);
+    tracker::MemoryTracker::GetInstance().RecordDeallocation(ptr);
     orig_delete(ptr);
 }
 
@@ -281,7 +278,7 @@ static void* HookedOperatorNewArray(size_t size) {
     TRACKER_DEBUG("HookedOperateNewArray: %zu\n", size);
 
     void* ptr = orig_new_array(size);
-    tracker::Instance().RecordAllocation(ptr, size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, size);
 
     return ptr;
 }
@@ -293,7 +290,7 @@ static void HookedOperatorDeleteArray(void* ptr) noexcept {
         return;
     }
 
-    tracker::Instance().RecordDeallocation(ptr);
+    tracker::MemoryTracker::GetInstance().RecordDeallocation(ptr);
     orig_delete_array(ptr);
 }
 
@@ -301,7 +298,7 @@ static void HookedOperatorDeleteArray(void* ptr) noexcept {
 
 class MemoryHook {
    public:
-    explicit MemoryHook(std::string lib_path) : lib_path_(std::move(lib_path)) {}
+    explicit MemoryHook(std::string lib_name) : lib_name_(std::move(lib_name)) {}
 
     ~MemoryHook() = default;
 
@@ -309,15 +306,15 @@ class MemoryHook {
     void Start();
 
    private:
-    std::string lib_path_;
+    std::string lib_name_;
     std::unique_ptr<PLTHook> hook_;
 };
 
 void MemoryHook::Start() {
     // 创建PLTHook实例, 针对特定的模块, 替换所有内存分配释放函数
-    hook_ = PLTHook::Create(lib_path_.c_str());
+    hook_ = PLTHook::Create(lib_name_.c_str());
     if (!hook_) {
-        TRACKER_ERROR("failed to create PLTHook instance for lib_path: %s", lib_path_.c_str());
+        TRACKER_ERROR("failed to create PLTHook instance for lib_name: %s", lib_name_.c_str());
         return;
     }
 
@@ -368,7 +365,7 @@ class MemoryDetectImpl {
     MemoryDetectImpl() = default;
     ~MemoryDetectImpl() = default;
 
-    void Register(const std::string& lib_path);
+    void Register(const std::string& lib_name);
     void RegisterMain();
     void Start();
     void Detect();
@@ -377,8 +374,8 @@ class MemoryDetectImpl {
     std::vector<std::unique_ptr<MemoryHook>> hooks_;
 };
 
-void MemoryDetectImpl::Register(const std::string& lib_path) {
-    hooks_.emplace_back(std::make_unique<MemoryHook>(lib_path));
+void MemoryDetectImpl::Register(const std::string& lib_name) {
+    hooks_.emplace_back(std::make_unique<MemoryHook>(lib_name));
 }
 
 void MemoryDetectImpl::RegisterMain() {
@@ -392,7 +389,7 @@ void MemoryDetectImpl::Start() {
 }
 
 void MemoryDetectImpl::Detect() {
-    tracker::Instance().PrintStatus();
+    tracker::MemoryTracker::GetInstance().PrintStatus();
 }
 
 // ======== 外层接口完善
@@ -400,8 +397,8 @@ MemoryDetect::MemoryDetect() : impl_(std::make_unique<MemoryDetectImpl>()) {}
 
 MemoryDetect::~MemoryDetect() = default;
 
-void MemoryDetect::Register(const std::string& lib_path) {
-    impl_->Register(lib_path);
+void MemoryDetect::Register(const std::string& lib_name) {
+    impl_->Register(lib_name);
 }
 
 void MemoryDetect::RegisterMain() {
