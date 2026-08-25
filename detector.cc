@@ -42,6 +42,16 @@ void Detector_Init(const char* work_dir, DetectorOption detect_option, OutputOpt
     tracker::OutputControl::Instance().Configure(output_option, output_file_name);
 }
 
+// 执行检测
+void Detector_Detect(void) {
+    if (detector_option & DetectorOption_Memory) {
+        MemoryDetect::GetInstance().Detect();
+    }
+    if (detector_option & DetectorOption_Lock) {
+        LockDetect::GetInstance().Detect();
+    }
+}
+
 // 启动检测器
 void Detector_Start(void) {
     if (detector_option & DetectorOption_Memory) {

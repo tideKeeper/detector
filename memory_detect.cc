@@ -186,10 +186,6 @@ size_t MemoryTracker::GetActiveAllocations() const {
     return active_allocations_cnt_;
 }
 
-MemoryTracker& Instance() {
-    return MemoryTracker::GetInstance();
-}
-
 }  // namespace tracker
 
 //========= hooked函数模块
@@ -209,7 +205,7 @@ static void* HookedMalloc(size_t size) {
 
     void* ptr = orig_malloc(size);
 
-    tracker::Instance().RecordAllocation(ptr, size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, size);
 
     // 返回分配的内存地址, 供使用
     return ptr;
@@ -222,7 +218,7 @@ static void HookedFree(void* ptr) {
     orig_free(ptr);
 
     // 消账
-    tracker::Instance().RecordDeallocation(ptr);
+    tracker::MemoryTracker::GetInstance().RecordDeallocation(ptr);
 }
 
 // calloc = 分配 + 清零，参数是「元素个数 × 每个元素大小
@@ -230,7 +226,7 @@ static void* HookedCalloc(size_t num, size_t size) {
     TRACKER_DEBUG("HookedCalloc: %zu, %zu\n", num, size);
 
     void* ptr = orig_calloc(num, size);
-    tracker::Instance().RecordAllocation(ptr, num * size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, num * size);
 
     return ptr;
 }
@@ -249,9 +245,9 @@ static void* HookedRealloc(void* old_ptr, size_t new_size) {
 
     // 成功, 更新记录
     if (old_ptr) {
-        tracker::Instance().RecordDeallocation(old_ptr);
+        tracker::MemoryTracker::GetInstance().RecordDeallocation(old_ptr);
     }
-    tracker::Instance().RecordAllocation(new_ptr, new_size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(new_ptr, new_size);
 
     return new_ptr;
 }
@@ -261,7 +257,7 @@ static void* HookedOperatorNew(size_t size) {
     TRACKER_DEBUG("HookedOperateNew: %zu\n", size);
 
     void* ptr = orig_new(size);
-    tracker::Instance().RecordAllocation(ptr, size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, size);
 
     return ptr;
 }
@@ -274,7 +270,7 @@ static void HookedOperatorDelete(void* ptr) noexcept {
         return;
     }
 
-    tracker::Instance().RecordDeallocation(ptr);
+    tracker::MemoryTracker::GetInstance().RecordDeallocation(ptr);
     orig_delete(ptr);
 }
 
@@ -282,7 +278,7 @@ static void* HookedOperatorNewArray(size_t size) {
     TRACKER_DEBUG("HookedOperateNewArray: %zu\n", size);
 
     void* ptr = orig_new_array(size);
-    tracker::Instance().RecordAllocation(ptr, size);
+    tracker::MemoryTracker::GetInstance().RecordAllocation(ptr, size);
 
     return ptr;
 }
@@ -294,7 +290,7 @@ static void HookedOperatorDeleteArray(void* ptr) noexcept {
         return;
     }
 
-    tracker::Instance().RecordDeallocation(ptr);
+    tracker::MemoryTracker::GetInstance().RecordDeallocation(ptr);
     orig_delete_array(ptr);
 }
 
@@ -393,7 +389,7 @@ void MemoryDetectImpl::Start() {
 }
 
 void MemoryDetectImpl::Detect() {
-    tracker::Instance().PrintStatus();
+    tracker::MemoryTracker::GetInstance().PrintStatus();
 }
 
 // ======== 外层接口完善

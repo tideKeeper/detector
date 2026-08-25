@@ -326,10 +326,6 @@ void LockTracker::PrintStatus() const {
     TRACKER_PRINT("\n===========================\n");
 }
 
-LockTracker& Instance() {
-    return LockTracker::GetInstance();
-}
-
 }  // namespace tracker
 
 // ======== Hook回调函数 + 原函数地址记录
@@ -343,14 +339,14 @@ static int HookedPthreadMutexLock(pthread_mutex_t* mutex) {
     LOCKER_DEBUG("HookedPthreadMutexLock: %p\n", mutex);
 
     // 加锁前记录等待关系, 执行死锁预判
-    tracker::Instance().RecordBeforeLock(mutex);
+    tracker::LockTracker::GetInstance().RecordBeforeLock(mutex);
 
     // 调用原函数
     int result = orig_pthread_mutex_lock(mutex);
 
     // 加锁成功后
     if (result == 0) {
-        tracker::Instance().RecordAfterLock(mutex);
+        tracker::LockTracker::GetInstance().RecordAfterLock(mutex);
     }
 
     return result;
@@ -360,7 +356,7 @@ static int HookedPthreadMutexUnlock(pthread_mutex_t* mutex) {
     LOCKER_DEBUG("HookedPthreadMutexUnlock: %p\n", mutex);
 
     // 移除持有记录
-    tracker::Instance().RecordUnlock(mutex);
+    tracker::LockTracker::GetInstance().RecordUnlock(mutex);
 
     // 调用原函数
     return orig_pthread_mutex_unlock(mutex);
@@ -373,7 +369,7 @@ static int HookedPthreadMutexTrylock(pthread_mutex_t* mutex) {
     int result = orig_pthread_mutex_trylock(mutex);
 
     if (result == 0) {
-        tracker::Instance().RecordAfterLock(mutex);
+        tracker::LockTracker::GetInstance().RecordAfterLock(mutex);
     }
 
     return result;
@@ -448,7 +444,7 @@ void LockDetectImpl::Start() {
 }
 
 void LockDetectImpl::Detect() {
-    tracker::Instance().PrintStatus();
+    tracker::LockTracker::GetInstance().PrintStatus();
 }
 
 // ======== LockDetect接口层
